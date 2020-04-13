@@ -7,6 +7,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import platform
+import time
 
 class ThermalStream(object):
 
@@ -94,6 +95,7 @@ class ThermalStream(object):
     self.is_active = True
 
   def stop(self):
+    cv2.destroyAllWindows()
     libuvc.uvc_stop_streaming(self.devh)
     libuvc.uvc_unref_device(self.dev)
     libuvc.uvc_exit(self.ctx)
@@ -131,11 +133,17 @@ class ThermalVisualization(object):
       data = cv2.resize(self.thermal.data[:,:], img_size)
       minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(data)
       img = self.raw_to_8bit(data)
+      # img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
       self.display_temperature(img, minVal, minLoc, unit=unit, color=(255, 0, 0))
       self.display_temperature(img, maxVal, maxLoc, unit=unit, color=(0, 0, 255))
       cv2.imshow('Lepton Radiometry', img)
 
-      if cv2.waitKey(1) & 0xFF == ord('q'):
+      key = cv2.waitKey(1) & 0xFF
+      if key == ord('q'):
         break
+      elif key == ord('s'):
+        timestr = time.strftime('%Y%m%d_%H%M%S') + '.png'
+        cv2.imwrite(timestr, img)
+        print('save image as {}'.format(timestr))
 
     self.thermal.stop()
