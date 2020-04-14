@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from uvctypes import *
+from .uvctypes import *
 import time
 import cv2
 import matplotlib.pyplot as plt
@@ -101,12 +101,6 @@ class ThermalStream(object):
     libuvc.uvc_exit(self.ctx)
     self.is_active = False
 
-
-class ThermalVisualization(object):
-
-  def __init__(self, thermal):
-    self.thermal = thermal
-
   def raw_to_8bit(self, data):
     cv2.normalize(data, data, 0, 65535, cv2.NORM_MINMAX)
     np.right_shift(data, 8, data)
@@ -114,10 +108,10 @@ class ThermalVisualization(object):
 
   def display_temperature(self, img, val_k, loc, unit='C', color=(255, 255, 255)):
     if unit == 'C':
-      val = self.thermal.ktoc(val_k)
+      val = self.ktoc(val_k)
       txt = 'degC'
     elif unit == 'F':
-      val = self.thermal.ktof(val_k)
+      val = self.ktof(val_k)
       txt = 'degF'
     else:
       val = val_k
@@ -129,8 +123,8 @@ class ThermalVisualization(object):
     cv2.line(img, (x, y - 2), (x, y + 2), color, 1)
 
   def show(self, img_size=(640,480), unit='C'):
-    while self.thermal.is_active:
-      data = cv2.resize(self.thermal.data[:,:], img_size)
+    while self.is_active:
+      data = cv2.resize(self.data[:,:], img_size)
       minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(data)
       img = self.raw_to_8bit(data)
       # img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
@@ -146,4 +140,4 @@ class ThermalVisualization(object):
         cv2.imwrite(timestr, img)
         print('save image as {}'.format(timestr))
 
-    self.thermal.stop()
+    self.stop()
