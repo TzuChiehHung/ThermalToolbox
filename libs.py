@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from .uvctypes import *
+from uvctypes import *
 import time
 import cv2
 import matplotlib.pyplot as plt
