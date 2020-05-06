@@ -12,7 +12,7 @@ import time
 class ThermalStream(object):
 
   def __init__(self):
-    self.data = np.zeros((120, 160), dtype=np.uint16)
+    self._data = np.zeros((120, 160), dtype=np.uint16)
     self.ptr_py_frame_callback = CFUNCTYPE(None, POINTER(uvc_frame), c_void_p)(self.py_frame_callback)
 
     self.ctx = POINTER(uvc_context)()
@@ -41,7 +41,7 @@ class ThermalStream(object):
         array_pointer.contents,
         dtype=np.dtype(np.uint16))
 
-    self.data = data.reshape(frame.contents.height, frame.contents.width)
+    self._data = data.reshape(frame.contents.height, frame.contents.width)
 
     if frame.contents.data_bytes != (2 * frame.contents.width * frame.contents.height):
       return
@@ -117,19 +117,27 @@ class ThermalStream(object):
       val = val_k
       txt = 'K'
 
-    cv2.putText(img,'{0:.1f}'.format(val) + txt, loc, cv2.FONT_HERSHEY_SIMPLEX, 0.75, color, 2)
+    cv2.putText(img,'{0:.1f}'.format(val) + txt, loc, cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
     x, y = loc
     cv2.line(img, (x - 2, y), (x + 2, y), color, 1)
     cv2.line(img, (x, y - 2), (x, y + 2), color, 1)
 
+  def get_raw_data(self):
+    return self._data.copy()
+
+  def get_cv_image(self, img_size=(160, 120), unit='C'):
+    data = self.get_raw_data()
+    minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(data)
+    img = self.raw_to_8bit(data)
+    # img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
+    self.display_temperature(img, minVal, minLoc, unit=unit, color=(255, 0, 0))
+    self.display_temperature(img, maxVal, maxLoc, unit=unit, color=(0, 0, 255))
+    img = cv2.resize(img, img_size)
+    return img
+
   def show(self, img_size=(640,480), unit='C'):
     while self.is_active:
-      data = cv2.resize(self.data[:,:], img_size)
-      minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(data)
-      img = self.raw_to_8bit(data)
-      # img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-      self.display_temperature(img, minVal, minLoc, unit=unit, color=(255, 0, 0))
-      self.display_temperature(img, maxVal, maxLoc, unit=unit, color=(0, 0, 255))
+      img = self.get_cv_image(img_size=img_size)
       cv2.imshow('Lepton Radiometry', img)
 
       key = cv2.waitKey(1) & 0xFF
