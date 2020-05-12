@@ -12,6 +12,7 @@ import time
 class ThermalStream(object):
 
   def __init__(self):
+    self.fps = 9.7
     self._data = np.zeros((120, 160), dtype=np.uint16)
     self.ptr_py_frame_callback = CFUNCTYPE(None, POINTER(uvc_frame), c_void_p)(self.py_frame_callback)
 
