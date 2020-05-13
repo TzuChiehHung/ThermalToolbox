@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 from uvctypes import *
 import time
 import cv2
@@ -9,144 +10,166 @@ import numpy as np
 import platform
 import time
 
+
 class ThermalStream(object):
 
-  def __init__(self):
-    self.fps = 9.7
-    self._data = np.zeros((120, 160), dtype=np.uint16)
-    self.ptr_py_frame_callback = CFUNCTYPE(None, POINTER(uvc_frame), c_void_p)(self.py_frame_callback)
+    def __init__(self, save_folder=''):
+        self.fps = 9.7
+        self._data = np.zeros((120, 160), dtype=np.uint16)
+        self.ptr_py_frame_callback = CFUNCTYPE(
+            None, POINTER(uvc_frame), c_void_p)(self.py_frame_callback)
 
-    self.ctx = POINTER(uvc_context)()
-    self.dev = POINTER(uvc_device)()
-    self.devh = POINTER(uvc_device_handle)()
-    self.ctrl = uvc_stream_ctrl()
+        self.ctx = POINTER(uvc_context)()
+        self.dev = POINTER(uvc_device)()
+        self.devh = POINTER(uvc_device_handle)()
+        self.ctrl = uvc_stream_ctrl()
 
-    self.is_active = False
+        self.is_active = False
+        self.save_folder = save_folder
 
-    res = libuvc.uvc_init(byref(self.ctx), 0)
-    if res < 0:
-      print("uvc_init error")
-      exit(1)
+        res = libuvc.uvc_init(byref(self.ctx), 0)
+        if res < 0:
+            print("uvc_init error")
+            exit(1)
 
-  def py_frame_callback(self, frame, userptr, copy=False):
-    array_pointer = cast(frame.contents.data, POINTER(c_uint16 * (frame.contents.width * frame.contents.height)))
-    if copy:
-      # copy
-      data = np.fromiter(
-        frame.contents.data,
-        dtype=np.dtype(np.uint8),
-        count=frame.contents.data_bytes)
-    else:
-      # no copy
-      data = np.frombuffer(
-        array_pointer.contents,
-        dtype=np.dtype(np.uint16))
+    def py_frame_callback(self, frame, userptr, copy=False):
+        array_pointer = cast(frame.contents.data, POINTER(
+            c_uint16 * (frame.contents.width * frame.contents.height)))
+        if copy:
+            # copy
+            data = np.fromiter(
+                frame.contents.data,
+                dtype=np.dtype(np.uint8),
+                count=frame.contents.data_bytes)
+        else:
+            # no copy
+            data = np.frombuffer(
+                array_pointer.contents,
+                dtype=np.dtype(np.uint16))
 
-    self._data = data.reshape(frame.contents.height, frame.contents.width)
+        self._data = data.reshape(frame.contents.height, frame.contents.width)
 
-    if frame.contents.data_bytes != (2 * frame.contents.width * frame.contents.height):
-      return
+        if frame.contents.data_bytes != (2 * frame.contents.width * frame.contents.height):
+            return
 
-  def ktof(self, val):
-    return (1.8 * self.ktoc(val) + 32.0)
+    def ktof(self, val):
+        return (1.8 * self.ktoc(val) + 32.0)
 
-  def ktoc(self, val):
-    return (val - 27315) / 100.0
+    def ktoc(self, val):
+        return (val - 27315) / 100.0
 
-  def start(self, disp=False):
+    def start(self, disp=False):
 
-    res = libuvc.uvc_find_device(self.ctx, byref(self.dev), PT_USB_VID, PT_USB_PID, 0)
-    if res < 0:
-      print("uvc_find_device error")
-      exit(1)
+        res = libuvc.uvc_find_device(self.ctx, byref(
+            self.dev), PT_USB_VID, PT_USB_PID, 0)
+        if res < 0:
+            print("uvc_find_device error")
+            exit(1)
 
-    res = libuvc.uvc_open(self.dev, byref(self.devh))
-    if res < 0:
-      print("uvc_open error")
-      exit(1)
+        res = libuvc.uvc_open(self.dev, byref(self.devh))
+        if res < 0:
+            print("uvc_open error")
+            exit(1)
 
-    print("device opened!")
+        print("device opened!")
 
-    if disp:
-      print_device_info(self.devh)
-      print_device_formats(self.devh)
+        if disp:
+            print_device_info(self.devh)
+            print_device_formats(self.devh)
 
-    frame_formats = uvc_get_frame_formats_by_guid(self.devh, VS_FMT_GUID_Y16)
-    if len(frame_formats) == 0:
-      print("device does not support Y16")
-      exit(1)
+        frame_formats = uvc_get_frame_formats_by_guid(
+            self.devh, VS_FMT_GUID_Y16)
+        if len(frame_formats) == 0:
+            print("device does not support Y16")
+            exit(1)
 
-    libuvc.uvc_get_stream_ctrl_format_size(
-      self.devh, byref(self.ctrl),
-      UVC_FRAME_FORMAT_Y16,
-      frame_formats[0].wWidth,
-      frame_formats[0].wHeight,
-      int(1e7 / frame_formats[0].dwDefaultFrameInterval))
+        libuvc.uvc_get_stream_ctrl_format_size(
+            self.devh, byref(self.ctrl),
+            UVC_FRAME_FORMAT_Y16,
+            frame_formats[0].wWidth,
+            frame_formats[0].wHeight,
+            int(1e7 / frame_formats[0].dwDefaultFrameInterval))
 
-    res = libuvc.uvc_start_streaming(
-      self.devh,
-      byref(self.ctrl),
-      self.ptr_py_frame_callback,
-      None,
-      0)
-    if res < 0:
-      print("uvc_start_streaming failed: {0}".format(res))
-      exit(1)
+        res = libuvc.uvc_start_streaming(
+            self.devh,
+            byref(self.ctrl),
+            self.ptr_py_frame_callback,
+            None,
+            0)
+        if res < 0:
+            print("uvc_start_streaming failed: {0}".format(res))
+            exit(1)
 
-    self.is_active = True
+        self.is_active = True
 
-  def stop(self):
-    cv2.destroyAllWindows()
-    libuvc.uvc_stop_streaming(self.devh)
-    libuvc.uvc_unref_device(self.dev)
-    libuvc.uvc_exit(self.ctx)
-    self.is_active = False
+    def stop(self):
+        cv2.destroyAllWindows()
+        libuvc.uvc_stop_streaming(self.devh)
+        libuvc.uvc_unref_device(self.dev)
+        libuvc.uvc_exit(self.ctx)
+        self.is_active = False
 
-  def raw_to_8bit(self, data):
-    cv2.normalize(data, data, 0, 65535, cv2.NORM_MINMAX)
-    np.right_shift(data, 8, data)
-    return cv2.cvtColor(np.uint8(data), cv2.COLOR_GRAY2RGB)
+    def raw_to_8bit(self, data):
+        cv2.normalize(data, data, 0, 65535, cv2.NORM_MINMAX)
+        np.right_shift(data, 8, data)
+        return cv2.cvtColor(np.uint8(data), cv2.COLOR_GRAY2RGB)
 
-  def display_temperature(self, img, val_k, loc, unit='C', color=(255, 255, 255)):
-    if unit == 'C':
-      val = self.ktoc(val_k)
-      txt = 'degC'
-    elif unit == 'F':
-      val = self.ktof(val_k)
-      txt = 'degF'
-    else:
-      val = val_k
-      txt = 'K'
+    def display_temperature(self, img, val_k, loc, unit='C', color=(255, 255, 255)):
+        if unit == 'C':
+            val = self.ktoc(val_k)
+            txt = 'degC'
+        elif unit == 'F':
+            val = self.ktof(val_k)
+            txt = 'degF'
+        else:
+            val = val_k
+            txt = 'K'
 
-    cv2.putText(img,'{0:.1f}'.format(val) + txt, loc, cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-    x, y = loc
-    cv2.line(img, (x - 2, y), (x + 2, y), color, 1)
-    cv2.line(img, (x, y - 2), (x, y + 2), color, 1)
+        cv2.putText(img, '{0:.1f}'.format(val) + txt, loc,
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+        x, y = loc
+        cv2.line(img, (x - 2, y), (x + 2, y), color, 1)
+        cv2.line(img, (x, y - 2), (x, y + 2), color, 1)
 
-  def get_raw_data(self):
-    return self._data.copy()
+    def get_raw_data(self):
+        return self._data.copy()
 
-  def get_cv_image(self, img_size=(160, 120), unit='C'):
-    data = self.get_raw_data()
-    minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(data)
-    img = self.raw_to_8bit(data)
-    # img = cv2.applyColorMap(img, cv2.COLORMAP_JET)
-    self.display_temperature(img, minVal, minLoc, unit=unit, color=(255, 0, 0))
-    self.display_temperature(img, maxVal, maxLoc, unit=unit, color=(0, 0, 255))
-    img = cv2.resize(img, img_size)
-    return img
+    def get_cv_image(self, img_size=(160, 120), unit='C', cmap=None):
+        data = self.get_raw_data()
+        minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(data)
+        img = self.raw_to_8bit(data)
+        if cmap:
+            img = cv2.applyColorMap(img, cmap)
+        self.display_temperature(
+            img, minVal, minLoc, unit=unit, color=(255, 0, 0))
+        self.display_temperature(
+            img, maxVal, maxLoc, unit=unit, color=(0, 0, 255))
+        img = cv2.resize(img, img_size)
+        return img
 
-  def show(self, img_size=(640,480), unit='C'):
-    while self.is_active:
-      img = self.get_cv_image(img_size=img_size)
-      cv2.imshow('Lepton Radiometry', img)
+    def snapshot(self):
+        timestr = time.strftime('%Y%m%d_%H%M%S')
 
-      key = cv2.waitKey(1) & 0xFF
-      if key == ord('q'):
-        break
-      elif key == ord('s'):
-        timestr = time.strftime('%Y%m%d_%H%M%S') + '.png'
-        cv2.imwrite(timestr, img)
-        print('save image as {}'.format(timestr))
+        fn_cv = os.path.join(self.save_folder, 'frame_' + timestr + '.jpg')
+        frame = self.get_cv_image()
+        cv2.imwrite(fn_cv, frame)
+        print('save image as {}'.format(fn_cv))
 
-    self.stop()
+        fn_np = os.path.join(self.save_folder, 'raw_' + timestr + '.npy')
+        np.save(fn_np, self.get_raw_data())
+        print('save raw as {}'.format(fn_np))
+
+    def show(self, img_size=(640, 480), unit='C'):
+        while self.is_active:
+            img = self.get_cv_image(img_size=img_size)
+            cv2.imshow('Lepton Radiometry', img)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                break
+            elif key == ord('s'):
+                timestr = time.strftime('%Y%m%d_%H%M%S') + '.png'
+                cv2.imwrite(timestr, img)
+                print('save image as {}'.format(timestr))
+
+        self.stop()
